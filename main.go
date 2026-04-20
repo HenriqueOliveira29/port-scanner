@@ -19,32 +19,32 @@ type Result struct {
 }
 
 func ScanPort(ctx context.Context, host string, port int, timeout time.Duration) Result {
-    address := fmt.Sprintf("%s:%d", host, port)
-    var d net.Dialer
-    conn, err := d.DialContext(ctx, "tcp4", address)
-    if err != nil {
-        return Result{port: port, result: false}
-    }
-    defer conn.Close()
+	address := fmt.Sprintf("%s:%d", host, port)
+	var d net.Dialer
+	conn, err := d.DialContext(ctx, "tcp4", address)
+	if err != nil {
+		return Result{port: port, result: false}
+	}
+	defer conn.Close()
 
-    if port == 80 || port == 443 || port == 8080 {
-        conn.SetWriteDeadline(time.Now().Add(timeout))
-        conn.Write([]byte("HEAD / HTTP/1.0\r\n\r\n"))
-    }
+	if port == 80 || port == 443 || port == 8080 {
+		conn.SetWriteDeadline(time.Now().Add(timeout))
+		conn.Write([]byte("HEAD / HTTP/1.0\r\n\r\n"))
+	}
 
-    conn.SetReadDeadline(time.Now().Add(timeout))
+	conn.SetReadDeadline(time.Now().Add(timeout))
 
-    buffer := make([]byte, 512)
-    n, err := conn.Read(buffer)
-    
-    var banner string
-    if err == nil && n > 0 {
-        raw := string(buffer[:n])
-        lines := strings.Split(raw, "\n")
-        banner = strings.TrimSpace(lines[0])
-    }
+	buffer := make([]byte, 512)
+	n, err := conn.Read(buffer)
 
-    return Result{port: port, result: true, banner: banner}
+	var banner string
+	if err == nil && n > 0 {
+		raw := string(buffer[:n])
+		lines := strings.Split(raw, "\n")
+		banner = strings.TrimSpace(lines[0])
+	}
+
+	return Result{port: port, result: true, banner: banner}
 }
 
 func worker(ctx context.Context, wg *sync.WaitGroup, host string, ports chan int, result chan Result) {
