@@ -82,14 +82,17 @@ func allocate(ctx context.Context, NumberOfPorts int, ports chan<- int) {
 	}
 }
 
-func showResult(result chan Result) {
+func showResult(result chan Result, nports *int) {
+	count := 0
 	for res := range result {
+		count++
+		percent := (float64(count) / float64(*nports)) * 100
+
+		bar := strings.Repeat("=", int(percent/5)) + strings.Repeat("-", 20-int(percent/5))
+		fmt.Printf("\r[%s] %.1f%% (%d/%d)", bar, percent, count, *nports)
+
 		if res.result {
-			if res.banner != "" {
-				fmt.Printf("[+] Port %d is open | Banner: %s\n", res.port, res.banner)
-			} else {
-				fmt.Printf("[+] Port %d is open | (No banner)\n", res.port)
-			}
+			fmt.Printf("\r[+] Porta %d aberta | %s                                \n", res.port, res.banner)
 		}
 	}
 }
@@ -115,7 +118,7 @@ func main() {
 		close(result)
 	}()
 
-	showResult(result)
+	showResult(result, nports)
 
 	endtime := time.Now()
 	diff := endtime.Sub(starttime)
