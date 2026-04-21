@@ -9,6 +9,7 @@ import (
 )
 
 type Result struct {
+	Host   string
 	Port   int
 	Result bool
 	Banner string
@@ -19,7 +20,7 @@ func ScanPort(ctx context.Context, host string, port int, timeout time.Duration)
 	var d net.Dialer
 	conn, err := d.DialContext(ctx, "tcp4", address)
 	if err != nil {
-		return Result{Port: port, Result: false}
+		return Result{Host: host, Port: port, Result: false}
 	}
 	defer conn.Close()
 
@@ -40,5 +41,31 @@ func ScanPort(ctx context.Context, host string, port int, timeout time.Duration)
 		banner = strings.TrimSpace(lines[0])
 	}
 
-	return Result{Port: port, Result: true, Banner: banner}
+	return Result{Host: host, Port: port, Result: true, Banner: banner}
+}
+
+func Hosts(cidr string) ([]string, error) {
+	ip, ipnet, err := net.ParseCIDR(cidr)
+	if err != nil {
+		return nil, err
+	}
+
+	var hosts []string
+	for ip := ip.Mask(ipnet.Mask); ipnet.Contains(ip); inc(ip) {
+		hosts = append(hosts, ip.String())
+	}
+
+	if len(hosts) > 2 {
+		return hosts[1 : len(hosts)-1], nil
+	}
+	return hosts, nil
+}
+
+func inc(ip net.IP) {
+	for j := len(ip) - 1; j >= 0; j-- {
+		ip[j]++
+		if ip[j] > 0 {
+			break
+		}
+	}
 }

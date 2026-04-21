@@ -13,52 +13,68 @@ import (
 	"example/portScanner/pkg/scanner"
 )
 
-func worker(ctx context.Context, wg *sync.WaitGroup, host string, ports chan int, result chan scanner.Result) {
+type Task struct {
+	Host string
+	Port int
+}
+
+func worker(ctx context.Context, wg *sync.WaitGroup, tasks chan Task, result chan scanner.Result) {
 	defer wg.Done()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case port, ok := <-ports:
+		case task, ok := <-tasks:
 			if !ok {
 				return
 			}
-			result <- scanner.ScanPort(ctx, host, port, 2*time.Second)
+			result <- scanner.ScanPort(ctx, task.Host, task.Port, 1*time.Second)
 		}
 	}
 }
 
-func workingPool(ctx context.Context, numberOfWorkers int, host string, ports chan int, result chan scanner.Result) {
+func workingPool(ctx context.Context, numberOfWorkers int, tasks chan Task, result chan scanner.Result) {
 	var wg sync.WaitGroup
 	for i := 0; i < numberOfWorkers; i++ {
 		wg.Add(1)
-		go worker(ctx, &wg, host, ports, result)
+		go worker(ctx, &wg, tasks, result)
 	}
 	wg.Wait()
 }
 
-func allocate(ctx context.Context, NumberOfPorts int, ports chan<- int) {
-	defer close(ports)
-	for i := 0; i < NumberOfPorts; i++ {
-		select {
-		case <-ctx.Done():
-			return
-		case ports <- i:
+func allocate(ctx context.Context, nports *int, hosts []string, tasks chan Task) {
+	defer close(tasks)
+	for _, h := range hosts {
+		for i := 1; i <= *nports; i++ {
+			select {
+			case <-ctx.Done():
+				return
+			case tasks <- Task{Host: h, Port: i}:
+			}
 		}
 	}
 }
 
-func showResult(result chan scanner.Result, nports *int) {
+func showResult(result chan scanner.Result, totalTasks int) {
 	count := 0
 	for res := range result {
 		count++
-		percent := (float64(count) / float64(*nports)) * 100
+		percent := (float64(count) / float64(totalTasks)) * 100
 
-		bar := strings.Repeat("=", int(percent/5)) + strings.Repeat("-", 20-int(percent/5))
-		fmt.Printf("\r[%s] %.1f%% (%d/%d)", bar, percent, count, *nports)
+		done := int(percent / 5)
+		if done > 20 {
+			done = 20
+		}
+		todo := 20 - done
+		if todo < 0 {
+			todo = 0
+		}
+
+		bar := strings.Repeat("=", done) + strings.Repeat("-", todo)
+		fmt.Printf("\r[%s] %.1f%% (%d/%d)", bar, percent, count, totalTasks)
 
 		if res.Result {
-			fmt.Printf("\r[+] Porta %d aberta | %s                                \n", res.Port, res.Banner)
+			fmt.Printf("\r[+] Porta %d aberta no IP %s | %s                                \n", res.Port, res.Host, res.Banner)
 		}
 	}
 }
@@ -72,19 +88,20 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
-	ports := make(chan int, 100)
+	tasks := make(chan Task, 1000)
+	hosts, _ := scanner.Hosts(*target)
 	result := make(chan scanner.Result, 100)
 
 	starttime := time.Now()
 
-	go allocate(ctx, *nports, ports)
+	go allocate(ctx, nports, hosts, tasks)
 
 	go func() {
-		workingPool(ctx, *workers, *target, ports, result)
+		workingPool(ctx, *workers, tasks, result)
 		close(result)
 	}()
 
-	showResult(result, nports)
+	showResult(result, len(hosts)*(*nports))
 
 	endtime := time.Now()
 	diff := endtime.Sub(starttime)
